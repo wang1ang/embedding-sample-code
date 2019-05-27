@@ -20,8 +20,9 @@ def model_v7():
     return pred_dan, pred_cdssm
 
 #checkpoint = r'log5\model.ckpt-2026339'
-checkpoint = r'log7_traintest\model.ckpt-1040002'
-output_graph = './model_v7.pb'
+#checkpoint = r'log7_traintest\model.ckpt-1040002'
+checkpoint = r'log8_moredata_cos\model.ckpt-583133'
+output_graph = './model_v8.pb'
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 parser = argparse.ArgumentParser(description='Tensorflow Pose Estimation Graph Extractor')
 parser.add_argument('--checkpoint', type=str, default=checkpoint, help='checkpoint path')

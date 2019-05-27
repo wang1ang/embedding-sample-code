@@ -60,7 +60,6 @@ def main(argv):
     test_feeder = DataFeeder(['train_HRS_video.txt'], is_training=False)
 
     classifier = tf.estimator.Estimator(model_fn=my_model, model_dir='log8_moredata_cos', config=run_config, params=train_feeder) #
-    #classifier.evaluate(input_fn=lambda: [train_feeder.tensor_data_generator(32, 100), None]) #, steps=1000) # or max_steps=1000
     train_spec = tf.estimator.TrainSpec(input_fn=lambda: [train_feeder.tensor_data_generator(128, 100), None])
     test_spec = tf.estimator.EvalSpec(input_fn=lambda: [test_feeder.tensor_data_generator(128, 100), None], throttle_secs=600)
     tf.estimator.train_and_evaluate(classifier, train_spec, test_spec)
