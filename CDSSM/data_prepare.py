@@ -46,7 +46,16 @@ def trilettergram():
     print('vocabulary size=%s'%idx)
     return voc_dict
 
-def sparse_embedding(text, voc_dict, max_words=128, max_letters=64):
+def lgram_embedding(text, voc_dict, max_length=128):
+    letterngram = 3
+    token = ''.join(['#', text.strip(), '#'])
+    lgram = [token[i:i+letterngram] for i in range(len(token) - letterngram + 1)]
+    embedding = [voc_dict[lg] for lg in lgram if lg in voc_dict][:max_length]
+    length = len(embedding)
+    embedding += [END_TOKEN] * (max_length - length)
+    return [embedding, length]
+
+def whash_embedding(text, voc_dict, max_words=128, max_letters=64):
     letterngram = 3
     norm = text.translate(str.maketrans('','', string.punctuation))
     words = list(filter(None, norm.split(' ')))[:max_words]
@@ -68,8 +77,10 @@ class DataFeeder:
             rawquery_col, rawurl_col,
             vocab,
             input_max_length, doc_max_length,
-            skip_count = 0, 
-            training = True):
+            skip_count = 0,
+            training = True,
+            use_lgram = False
+            ):
         self.batch_size = batch_size
         self.input_filename = input_filename
         self.query_col = query_col
@@ -82,8 +93,9 @@ class DataFeeder:
         self.skip_count = skip_count
         self.training = training
         self.buffer = dict()
-        self.line_iter = self.get_line()
-    def get_line(self):
+        self.func_make_batch = self.make_lgram_batch if use_lgram else self.make_sparse_batch
+        self.line_iter = self.get_line(lgram_embedding) if use_lgram else self.get_line(whash_embedding)
+    def get_line(self, func_embedding):
         while True:
             print (f'reading {self.input_filename}')
             with open(self.input_filename, "r", encoding="utf-8") as finput:
@@ -95,12 +107,19 @@ class DataFeeder:
                     doc = tokens[self.doc_col].lower()
                     url = tokens[self.rawurl_col]
                     data = {
-                        'input': sparse_embedding(query, self.vocab, self.input_max_length),
-                        'doc': sparse_embedding(doc, self.vocab, self.doc_max_length),
+                        'input': func_embedding(query, self.vocab, self.input_max_length),
+                        'doc': func_embedding(doc, self.vocab, self.doc_max_length),
                         'url': url,
                         'query': query
                     }
                     yield data
+    def make_lgram_batch(self, inputs, docs):
+        return {
+            'input': [e for e, l in inputs],
+            'doc': [e for e, l in docs],
+            'input_length': [l for e, l in inputs],
+            'doc_length': [l for e, l in docs]
+        }
     def combine_sparse(self, samples, max_length):
         indices_batch = []
         values_batch = []
@@ -116,10 +135,20 @@ class DataFeeder:
         values_batch.append(END_TOKEN)
 
         return indices_batch, values_batch, length_batch
-
+    def make_sparse_batch(self, inputs, docs):
+        input_indices_batch, input_values_batch, input_length = self.combine_sparse(inputs, self.input_max_length)
+        doc_indices_batch, doc_values_batch, doc_length = self.combine_sparse(docs, self.doc_max_length)
+        return {
+            'input_indices': input_indices_batch,
+            'input_values': input_values_batch,
+            'doc_indices': doc_indices_batch,
+            'doc_values': doc_values_batch,
+            'input_length': input_length,
+            'doc_length': doc_length,
+        }
     def get_batch(self):
         while True:
-            inputs, docs, input_length, doc_length = [], [], [], []
+            inputs, docs = [], []
             queries, urls = [], []
 
             # fill buffer
@@ -141,41 +170,56 @@ class DataFeeder:
                 queries.append(rec['query'])
                 urls.append(rec['url'])
             assert len(inputs) == self.batch_size
-            input_indices_batch, input_values_batch, input_length = self.combine_sparse(inputs, self.input_max_length)
-            doc_indices_batch, doc_values_batch, doc_length = self.combine_sparse(docs, self.doc_max_length)
-            yield {
-                'input_indices': input_indices_batch,
-                'input_values': input_values_batch,
-                'doc_indices': doc_indices_batch,
-                'doc_values': doc_values_batch,
-                'input_length': input_length,
-                'doc_length': doc_length,
-                'query': queries,
-                'url': urls
-            }
-    def data_tensor(self):
-        dataset = tf.data.Dataset.from_generator(self.get_batch, {
-            'input_indices': tf.int64,
-            'input_values': tf.int32,
-            'doc_indices': tf.int64,
-            'doc_values': tf.int32,
-            'input_length': tf.int32,
-            'doc_length': tf.int32,
-            'query': tf.string,
-            'url': tf.string
-        }, {
-            'input_indices': tf.TensorShape([None, 2]),
-            'input_values': tf.TensorShape([None]),
-            'doc_indices': tf.TensorShape([None, 2]),
-            'doc_values': tf.TensorShape([None]),
-            'input_length': tf.TensorShape([None]),
-            'doc_length': tf.TensorShape([None]),
-            'query': tf.TensorShape([None]),
-            'url': tf.TensorShape([None])
-        })
-        iterator = dataset.make_one_shot_iterator()
-        return iterator.get_next()
+            batch = self.func_make_batch(inputs, docs)
+            batch['query'] = queries
+            batch['url'] = urls
+            yield batch
+    def sparse_data_tensor(self):
+        self.func_make_batch = self.make_sparse_batch
+        with tf.name_scope('sparse_data_tensor'):
+            dataset = tf.data.Dataset.from_generator(self.get_batch, {
+                'input_indices': tf.int64,
+                'input_values': tf.int32,
+                'doc_indices': tf.int64,
+                'doc_values': tf.int32,
+                'input_length': tf.int32,
+                'doc_length': tf.int32,
+                'query': tf.string,
+                'url': tf.string
+            }, {
+                'input_indices': tf.TensorShape([None, 2]),
+                'input_values': tf.TensorShape([None]),
+                'doc_indices': tf.TensorShape([None, 2]),
+                'doc_values': tf.TensorShape([None]),
+                'input_length': tf.TensorShape([None]),
+                'doc_length': tf.TensorShape([None]),
+                'query': tf.TensorShape([None]),
+                'url': tf.TensorShape([None])
+            })
+            iterator = dataset.make_one_shot_iterator()
+            return iterator.get_next()
+    def lgram_tensor(self):
+        self.func_make_batch = self.make_lgram_batch
+        with tf.name_scope('lgram_tensor'):
+            dataset = tf.data.Dataset.from_generator(self.get_batch, {
+                'input': tf.int32,
+                'doc': tf.int32,
+                'input_length': tf.int32,
+                'doc_length': tf.int32,
+                'query': tf.string,
+                'url': tf.string
+            }, {
+                'input': tf.TensorShape([None, self.input_max_length]),
+                'doc': tf.TensorShape([None, self.doc_max_length]),
+                'input_length': tf.TensorShape([None]),
+                'doc_length': tf.TensorShape([None]),
+                'query': tf.TensorShape([None]),
+                'url': tf.TensorShape([None])
+            })
+            iterator = dataset.make_one_shot_iterator()
+            return iterator.get_next()
 
+import train_baseline as train
 if __name__ == '__main__':
     vocab = trilettergram()
 
@@ -186,15 +230,18 @@ if __name__ == '__main__':
         2,
         1,
         0,
-        vocab, 16, 64,
+        vocab, 100, 100,
         skip_count=0,
-        training = False)
+        training = False,
+        use_lgram=True)
 
-    one_query = data_feeder.data_tensor()
+    #one_query = data_feeder.sparse_data_tensor()
+    features = data_feeder.lgram_tensor()
+    net = train.cdssm_model(features)
     with tf.Session() as sess:
         while True:
             try:
-                data = sess.run(one_query)
+                data = sess.run(net)
                 print (data['input_length'])
             except tf.errors.OutOfRangeError:
                 print ('end!')
