@@ -95,6 +95,7 @@ class DataFeeder:
         self.buffer = dict()
         self.func_make_batch = self.make_lgram_batch if use_lgram else self.make_sparse_batch
         self.line_iter = self.get_line(lgram_embedding) if use_lgram else self.get_line(whash_embedding)
+        self.fn_batch = self.get_batch if training else self.get_batch_test
     def get_line(self, func_embedding):
         while True:
             print (f'reading {self.input_filename}')
@@ -174,10 +175,25 @@ class DataFeeder:
             batch['query'] = queries
             batch['url'] = urls
             yield batch
+    def get_batch_test(self):
+        while True:
+            inputs, docs = [], []
+            queries, urls = [], []
+            for i in range(self.batch_size):
+                rec = next(self.line_iter)
+                inputs.append(rec['input'])
+                docs.append(rec['doc'])
+                queries.append(rec['query'])
+                urls.append(rec['url'])
+            batch = self.func_make_batch(inputs, docs)
+            batch['query'] = queries
+            batch['url'] = urls
+            yield batch
+
     def sparse_data_tensor(self):
         self.func_make_batch = self.make_sparse_batch
         with tf.name_scope('sparse_data_tensor'):
-            dataset = tf.data.Dataset.from_generator(self.get_batch, {
+            dataset = tf.data.Dataset.from_generator(self.fn_batch, {
                 'input_indices': tf.int64,
                 'input_values': tf.int32,
                 'doc_indices': tf.int64,
@@ -201,7 +217,7 @@ class DataFeeder:
     def lgram_tensor(self):
         self.func_make_batch = self.make_lgram_batch
         with tf.name_scope('lgram_tensor'):
-            dataset = tf.data.Dataset.from_generator(self.get_batch, {
+            dataset = tf.data.Dataset.from_generator(self.fn_batch, {
                 'input': tf.int32,
                 'doc': tf.int32,
                 'input_length': tf.int32,
