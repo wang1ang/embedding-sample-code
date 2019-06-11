@@ -4,25 +4,33 @@ import os
 import codecs
 import numpy as np
 import data_prepare
+import collections
+import re
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--mode', default="train", help='train or evaluate')
-parser.add_argument('--model_dir', default="model_test/v13_attention/", help='model file dir')
-parser.add_argument('--train_file', default="AllData_part1_2018_07_27_top1M.tsv", help='training data file')
-parser.add_argument('--test_file', default="AllData_part1_2018_07_27_top1M_top128k.tsv", help='testing data file')
+parser.add_argument('--model_dir', default="model_test/v15_64_lr001/", help='model file dir')
+#parser.add_argument('--train_file', default="AllData_part1_2018_07_27_top1M.tsv", help='training data file')
+#parser.add_argument('--test_file', default="AllData_part1_2018_07_27_top1M_top128k.tsv", help='testing data file')
+parser.add_argument('--train_file', default="AllDataWithImage_full_norm_dedup_2018_07_27_noimage.tsv", help='training data file')
+parser.add_argument('--test_file', default="AllDataWithImage_full_norm_dedup_2018_07_27_noimage_top128k.tsv", help='testing data file')
+parser.add_argument('--init_checkpoint', default='model_test/v14_big/model.ckpt-960307', help='init checkpoint')
+
 parser.add_argument('--predict_file', default="./PredictDataSample.tsv", help='predict data file')
 parser.add_argument('--predict_file_result', default="./PredictDataSampleResult.tsv", help='predict data result file')
-parser.add_argument('--query_col', default=1, type=int, help='query column index')
-parser.add_argument('--doc_col', default=2, type=int, help='document column index')
-parser.add_argument('--rawquery_col', default=1, type=int, help='rawquery column index')
-parser.add_argument('--rawurl_col', default=0, type=int, help='url column index')
+
+parser.add_argument('--query_col', default=2, type=int, help='query column index')
+parser.add_argument('--doc_col', default=3, type=int, help='document column index')
+parser.add_argument('--rawquery_col', default=2, type=int, help='rawquery column index')
+parser.add_argument('--rawurl_col', default=1, type=int, help='url column index')
+
 parser.add_argument('--batch_size', default=128, type=int, help='batch size')
 #parser.add_argument('--train_steps', default=1000, type=int, help='number of training steps')
 parser.add_argument('--embedding_size', default=128, type=int, help='embedding size')
 parser.add_argument('--rnn_size', default=512, type=float, help='rnn size')
 parser.add_argument('--attention_size', default=32, type=float, help='attention size')
 parser.add_argument('--num_train_steps', default=1000000, type=int, help='number of max iterations')
-parser.add_argument('--starter_learning_rate', default=0.15, type=float, help='start learning rate')
+parser.add_argument('--starter_learning_rate', default=0.01, type=float, help='start learning rate') # 0.15
 parser.add_argument('--gamma', default=0.1, type=float, help='learning rate decay gamma')
 parser.add_argument('--stepvalue', default=300000, type=int, help='learning rate decay every k steps')
 
@@ -95,6 +103,35 @@ def self_cosine_loss(mode, hparams, query, doc):
         similarity = tf.linalg.tensor_diag_part(cosines)
         return loss, similarity, accuracy
 
+def get_assignment_map_from_checkpoint(tvars, init_checkpoint):
+  """Compute the union of the current variables and checkpoint variables."""
+  assignment_map = {}
+  initialized_variable_names = {}
+
+  name_to_variable = collections.OrderedDict()
+  for var in tvars:
+    name = var.name
+    m = re.match("^(.*):\\d+$", name)
+    if m is not None:
+      name = m.group(1)
+    name_to_variable[name] = var
+
+  init_vars = tf.train.list_variables(init_checkpoint)
+
+  assignment_map = collections.OrderedDict()
+  for x in init_vars:
+    (name, shape) = (x[0], x[1])
+    if name not in name_to_variable:
+      print ('{}: not load'.format(name))
+      continue
+    if name_to_variable[name].shape != shape:
+      print ('{}: not load, shape not match {} -> {}'.format(name, shape, name_to_variable[name].shape))
+      continue
+    assignment_map[name] = name
+    initialized_variable_names[name] = 1
+    initialized_variable_names[name + ":0"] = 1
+  return (assignment_map, initialized_variable_names)
+
 def cdssm_model(features, labels, mode, params):
     batch_size = params['batch_size']
     input_max_length = params['input_max_length']
@@ -124,6 +161,10 @@ def cdssm_model(features, labels, mode, params):
         metrics = {'my_loss': tf.metrics.mean(loss), 'accuracy': tf.metrics.mean(accuracy)}
         return tf.estimator.EstimatorSpec(mode, loss=total_loss, eval_metric_ops=metrics)
 
+    if params['init_checkpoint']:
+        tvars = tf.trainable_variables()
+        (assignment_map, initialized_variable_names) = get_assignment_map_from_checkpoint(tvars, params['init_checkpoint'])
+        tf.train.init_from_checkpoint( params['init_checkpoint'], assignment_map)
     # Create training op.
     assert mode == tf.estimator.ModeKeys.TRAIN
     with tf.variable_scope('train_op'):
@@ -149,12 +190,13 @@ def main(argv):
         'embed_dim': args.embedding_size,
         'rnn_size': args.rnn_size,
         'attention_size': args.attention_size,
-        'hidden_units': [128, 32],
+        'hidden_units': [128, 64],
         'train_log_interval': 1000,
         'starter_learning_rate' : args.starter_learning_rate,
         'gamma' : args.gamma,
         'stepvalue' : args.stepvalue,
         'num_train_steps' : args.num_train_steps,
+        'init_checkpoint': args.init_checkpoint,
     }
 
     query_col = args.query_col
