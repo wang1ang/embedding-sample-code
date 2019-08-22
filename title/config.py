@@ -1,5 +1,6 @@
 import tensorflow as tf
 from loss import *
+from data import SentencePieceEmbedding, TriLetterEmbedding
 v0 = {
     'version': 'v0',
     'activation': tf.nn.relu,
@@ -66,6 +67,117 @@ v6_1 = {
     'sfunc': dot, # order_Sfunc
     'loss': softmax_loss
 }
+w6_1 = {
+    'version': 'w6.1',
+    'embed_func': SentencePieceEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': False,
+    'con_l2': False,
+    'sfunc': dot,
+    'loss': softmax_loss
+}
+w6_2 = {
+    'version': 'w6.2',
+    'embed_func': SentencePieceEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': False,
+    'con_l2': False,
+    'sfunc': dot,
+    'loss': softmax_loss
+}
+w6_3 = {
+    'version': 'w6.3',
+    'embed_func': SentencePieceEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': False,
+    'con_l2': False,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss
+}
+w6_4 = {
+    'version': 'w6.adam',
+    'embed_func': SentencePieceEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': False,
+    'con_l2': False,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer
+}
+w6_5 = {
+    'version': 'w6.multi',
+    'lang_tier': 1,
+    'embed_func': SentencePieceEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': False,
+    'con_l2': False,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer
+}
+w6_6 = {
+    # content: last layer 0.0004
+    # top24_10w.model
+    'version': 'w6.top24',
+    'embed_func': SentencePieceEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': False,
+    'con_l2': False,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer
+}
+w6_7 = {
+    # content: last layer 0.0004
+    # top24_10w.model
+    # english training
+    'version': 'w6.l2',
+    'embed_func': SentencePieceEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': True,
+    'con_l2': True,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer
+}
+w6_8 = {
+    # content: last layer 0.0004
+    # top24_10w.model
+    # multi lan training
+    'version': 'w6.l2_multi',
+    'lang_tier': 1,
+    'embed_func': SentencePieceEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': True,
+    'con_l2': True,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer
+}
+w6_9 = {
+    # content: last layer 0.0004
+    # top24_10w.model
+    # multi lan training
+    'version': 'w6.l2_multi_lr',
+    'lang_tier': 1,
+    'embed_func': SentencePieceEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': True,
+    'con_l2': True,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer,
+    'starter_learning_rate': 0.0001,
+}
+
+v6_2 = {
+    'version': 'v6.2', # retry
+    'activation': tf.nn.softplus,
+    'query_l2': False,
+    'con_l2': False,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss
+}
 v7 = {
     'version': 'v7',
     'activation': tf.abs,
@@ -98,12 +210,36 @@ v9_1 = {
     'sfunc': order_Sfunc,
     'loss': margin_loss
 }
+v9_3 = {
+    'version': 'v9.3',
+    'activation': tf.nn.softplus,
+    'query_l2': True,
+    'con_l2': True,
+    'sfunc': order_Sfunc,
+    'loss': softmax_loss
+}
 v10 = {
-    'version': 'v10',
+    'version': 'v10_fix',
     'activation': None,
     'query_l2': False,
     'con_l2': False,
     'sfunc': relative_Sfunc, # order_Sfunc
     'loss': softmax_loss
 }
-print (v7['sfunc'] == dot)
+v11 = {
+    'version': 'v11',
+    'activation': tf.nn.softplus,
+    'query_l2': False,
+    'con_l2': False,
+    'sfunc': inter_Sfunc, # order_Sfunc
+    'loss': softmax_loss
+}
+v11_1 = {
+    'version': 'v11.1',
+    'activation': None,
+    'query_l2': False,
+    'con_l2': False,
+    'sfunc': inter_Sfunc, # order_Sfunc
+    'loss': softmax_loss
+}
+#print (v7['sfunc'] == dot)
