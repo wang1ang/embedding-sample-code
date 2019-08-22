@@ -20,7 +20,14 @@ def _marginal_loss(smatrix, size, margin):
     loss = tf.linalg.set_diag(loss, tf.zeros(size, dtype=loss.dtype))
     loss = tf.reduce_mean(loss) # - (bs*2)
     return loss, pos, accuracy
-
+def _soft_hinge_loss(smatrix, size):
+    pos, accuracy = similarity_accuracy(smatrix, size)
+    # query x doc
+    pos_col = tf.reshape(pos, [-1, 1])
+    loss = tf.log(1 + tf.exp(smatrix - pos_col))
+    loss = tf.linalg.set_diag(loss, tf.zeros(size, dtype=loss.dtype))
+    loss = tf.reduce_mean(loss)
+    return loss, pos, accuracy
 def _softmax_loss(smatrix, size):
     with tf.variable_scope('softmax_loss'):
         prob = tf.nn.softmax(smatrix, axis=1)
@@ -37,10 +44,13 @@ def softmax_loss(mode, hparams, similarities, version):
     with tf.variable_scope('self_cosine_loss'):
         batchsize = hparams['batch_size']
         conf = hparams['config']
-        if (conf['query_l2'] or conf['con_l2']) and conf['sfunc'] == relative_Sfunc:
+        if conf['query_l2'] or conf['con_l2'] or conf['sfunc'] == relative_Sfunc:
             W = tf.get_variable('weight_1', [1], initializer=tf.constant_initializer(5.0))
             b = tf.get_variable('b_1', [1], initializer=tf.constant_initializer(0.01))
             similarities = similarities * W + b
+            tf.summary.histogram('W', W)
+            tf.summary.histogram('b', b)
+
         loss, similarity, accuracy = _softmax_loss(similarities, batchsize)
         return loss, similarity, accuracy, 'my_loss'
 
@@ -101,3 +111,11 @@ def relative_Sfunc(query, doc):
 #def relative_cosine_loss(mode, hparams, query, doc):
 #    with tf.variable_scope('relative_cosine_loss'):
 #        return self_cosine_loss(mode, hparams, query, doc)
+
+def inter_Sfunc(query, doc):
+    # suppose both positive    
+    query = tf.expand_dims(query, 1)
+    doc = tf.expand_dims(doc, 0)
+
+    intersection = tf.minimum(query, doc)
+    return tf.reduce_sum(intersection, 2)
