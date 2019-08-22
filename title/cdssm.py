@@ -31,10 +31,14 @@ def cdssm_tower(mode, feature, length, max_length, embed_dim, scope, params, act
     batch_size = params['batch_size']
     vocab_size = params['vocab_size']
     #embedding = sparse_embed_layer(feature, vocab_size, embed_dim, scope)
+    # todo: try tf.random_normal_initializer(mean=0.0, stddev=0.02)
+    # todo: try tf.random_uniform_initializer(minval=-0.02, maxval=0.02)
+    # todo: try tf.truncated_normal_initializer(stddev=0.02) (used in bert) will be redrawn if the value > 2 x 0.02
     with tf.variable_scope('common', reuse=tf.AUTO_REUSE):
-        embedding_table = tf.get_variable("embedding_table", [vocab_size, embed_dim], dtype=tf.float32, initializer=tf.random_normal_initializer())
+        embedding_table = tf.get_variable("embedding_table", [vocab_size, embed_dim], dtype=tf.float32, initializer=tf.truncated_normal_initializer(stddev=0.02))
     with tf.variable_scope(scope):
         embedding = sparse_embed_layer(embedding_table, feature, batch_size, max_length, embed_dim)
+        #embedding = tf.contrib.layers.layer_norm(inputs=embedding, begin_norm_axis=-1, begin_params_axis=-1, scope=name)
         outputs, last_state = birnn(embedding, length, params['rnn_size'])
         pooled = attention(outputs, params['attention_size'], scope)
         #pooled = last_state
