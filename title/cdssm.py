@@ -1,5 +1,6 @@
 
 import tensorflow as tf
+from bert.modeling import BertModel, BertConfig, get_assignment_map_from_checkpoint
 
 def sparse_embed_layer(embedding_table, sparse_input, batch_size, max_length, embed_dim):
     with tf.variable_scope('embed_lookup'):
@@ -52,3 +53,34 @@ def cdssm_tower(mode, feature, length, max_length, embed_dim, scope, params, act
             #if i == 0 and mode==tf.estimator.ModeKeys.TRAIN:
             #    fc = tf.nn.dropout(fc, keep_prob=0.5)
         return fc
+def bert(bert_config_file, mode, dim, input_ids, input_mask, input_type, activation, init_checkpoint=None):
+    bert_config = BertConfig.from_json_file(bert_config_file)
+    bert_model = BertModel(
+        config=bert_config,
+        is_training=mode==tf.estimator.ModeKeys.TRAIN,
+        input_ids= input_ids,
+        input_mask=input_mask,
+        token_type_ids= input_type,
+        scope="bert_query"
+    )
+    output = bert_model.get_pooled_output()
+    if mode==tf.estimator.ModeKeys.TRAIN:
+        output = tf.nn.dropout(output, keep_prob=0.9)
+    sig = tf.layers.dense(output, dim, activation=activation, kernel_initializer=tf.truncated_normal_initializer(stddev=bert_config.initializer_range), name="bert_query/query")
+    
+
+    tvars = tf.trainable_variables('bert_query')
+    initialized_variable_names = {}
+    if init_checkpoint:
+      (assignment_map, initialized_variable_names) = get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+      tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+    """
+    for var in tvars:
+      init_string = ""
+      if var.name in initialized_variable_names:
+        init_string = ", *INIT_FROM_CKPT*"
+      tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
+                      init_string)
+    """
+
+    return sig

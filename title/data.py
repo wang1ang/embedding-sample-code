@@ -11,26 +11,57 @@ import os
 import sys
 import time
 import string
+from tokenizer.simplifier import Simplifier
+from tokenizer.tokenizer import Tokenizer
+from tokenizer.lowercase_and_remove_accent import run_strip_accents
 
 import sentencepiece as spm
 class TextEmbedding(object):
     pass
     #def __init__(self):
+class XlmEmbedding(TextEmbedding):
+    def __init__(self):
+        pass
+    def get_embedding_fn(self, max_length=12):
+        self.max_length = max_length
+        self.s = Simplifier('tokenizer/zh_mapping.txt')
+        self.t = Tokenizer('tokenizer/spiece_all_bpe/spiece.all.bpe.130000.lower.model',
+            'tokenizer/lg.all.voc',
+            max_length
+        )
+        self.max_length = max_length
+        return self.embedding
+    def embedding(self, text):
+        simple = self.s.simplify(text)
+        tokens = self.t.tokenize(simple)
+        accents = run_strip_accents(tokens)
+        ids = self.t.token_to_id(accents)
+        return ids
+    def size(self):
+        return self.t.dico.counts
+    @classmethod
+    def get_feeder(cls):
+        return DenseDataFeeder
 class SentencePieceEmbedding(TextEmbedding):
     def __init__(self):
         self.sp = spm.SentencePieceProcessor()
         #self.sp.load('mtier1_20w.model')
         #self.sp.load('mtier1_10w.model')
         self.sp.load(r'E:\embedding\title\top24_10w.model')
-    def get_embedding_fn(self):
+    def get_embedding_fn(self, max_length=128):
+        self.max_length = max_length
         return self.embedding
-    def embedding(self, text, max_words=128):
-        values = self.sp.encode_as_ids(text)[:max_words]
+    def embedding(self, text):
+        values = self.sp.encode_as_ids(text)[:self.max_length]
         length = len(values)
         indices = [[i, 0] for i in range(length)]
         return [indices, values, length]
     def size(self):
         return self.sp.get_piece_size()
+    @classmethod
+    def get_feeder(cls):
+        return SparseDataFeeder
+
 class TriLetterEmbedding(TextEmbedding):
     GO_TOKEN = 0
     END_TOKEN = 1
@@ -78,12 +109,13 @@ class TriLetterEmbedding(TextEmbedding):
         length = len(embedding)
         embedding += [self.END_TOKEN] * (max_length - length)
         return [embedding, length]
-    def get_embedding_fn(self):
+    def get_embedding_fn(self, max_length):
+        self.max_length = max_length
         return self.whash_embedding
-    def whash_embedding(self, text, max_words=128, max_letters=64):
+    def whash_embedding(self, text, max_letters=64):
         letterngram = 3
         norm = text.translate(str.maketrans('','', string.punctuation))
-        words = list(filter(None, norm.split(' ')))[:max_words]
+        words = list(filter(None, norm.split(' ')))[:self.max_length]
         indices = []
         values = []
         for i, word in enumerate(words):
@@ -94,8 +126,9 @@ class TriLetterEmbedding(TextEmbedding):
                     indices.append([i, j]) # i-th word & j-th char
                     values.append(self.voc_dict[token])
         return [indices, values, len(words)]
-
-
+    @classmethod
+    def get_feeder(cls):
+        return SparseDataFeeder
 
 class DataFeeder(object):
     def __init__(self,         
@@ -130,7 +163,7 @@ class DataFeeder(object):
                         content = [float(x) for x in tokens[2].split(',')]
                         data = {
                             'url': url,
-                            'doc': func_embedding(doc, self.doc_max_length),
+                            'doc': func_embedding(doc),
                             'content': content
                         }
                         yield data
@@ -180,6 +213,51 @@ class DataFeeder(object):
             batch['url'] = urls
             yield batch
 
+class DenseDataFeeder(DataFeeder):
+    def __init__(self,         
+            batch_size, input_filenames,
+            doc_max_length,
+            skip_count,
+            embed_func,
+            training = True
+            ):
+        DataFeeder.__init__(self, batch_size, input_filenames, doc_max_length, skip_count, training)
+        self.embedding = embed_func()
+        self.line_iter = [self.get_line(self.embedding.get_embedding_fn(doc_max_length), fns) for fns in self.input_filenames]
+    def get_vocab_size(self):
+        return self.embedding.size()
+    def make_batch(self, docs):
+        doc_ids = []
+        doc_mask = []
+        doc_type = []
+        for ids in docs:
+            l = len(ids)
+            doc_ids.append(ids + [0] * (self.doc_max_length - l)) 
+            doc_mask.append([1] * l + [0] * (self.doc_max_length - l))
+            doc_type.append([0] * self.doc_max_length)
+        return {
+            'doc_ids': doc_ids,
+            'doc_mask': doc_mask,
+            'doc_type': doc_type,
+        }
+    def data_tensor(self):
+        with tf.name_scope('sparse_data_tensor'):
+            dataset = tf.data.Dataset.from_generator(self.poll_batch, {
+                'url': tf.string,
+                'doc_ids': tf.int32,
+                'doc_mask': tf.int32,
+                'doc_type': tf.int32,
+                'content': tf.float32
+            }, {
+                'url': tf.TensorShape([None]),
+                'doc_ids': tf.TensorShape([None, self.doc_max_length]),
+                'doc_mask': tf.TensorShape([None, self.doc_max_length]),
+                'doc_type': tf.TensorShape([None, self.doc_max_length]),
+                'content': tf.TensorShape([None, 2048])
+            })
+            iterator = dataset.make_one_shot_iterator()
+            return iterator.get_next()
+
 class SparseDataFeeder(DataFeeder):
     def __init__(self,         
             batch_size, input_filenames,
@@ -190,7 +268,7 @@ class SparseDataFeeder(DataFeeder):
             ):
         DataFeeder.__init__(self, batch_size, input_filenames, doc_max_length, skip_count, training)
         self.embedding = embed_func()
-        self.line_iter = [self.get_line(self.embedding.get_embedding_fn(), fns) for fns in self.input_filenames]
+        self.line_iter = [self.get_line(self.embedding.get_embedding_fn(doc_max_length), fns) for fns in self.input_filenames]
        
     def get_vocab_size(self):
         return self.embedding.size()
@@ -236,6 +314,7 @@ class SparseDataFeeder(DataFeeder):
 
 from datafiles import get_files
 if __name__ == '__main__':
+    """
     files = get_files()
     files = files[:1]
     train_feeder = SparseDataFeeder(
@@ -249,3 +328,16 @@ if __name__ == '__main__':
     #batch = next(batch_iter)
     #print (batch)
     print (train_feeder.get_vocab_size())
+    """
+    files = get_files(0)
+    train_feeder = DenseDataFeeder(
+        16,
+        files,
+        12,
+        skip_count = 0,
+        embed_func=XlmEmbedding,
+        training = True
+    )
+    batch_iter = train_feeder.poll_batch()
+    batch = next(batch_iter)
+    print (batch)

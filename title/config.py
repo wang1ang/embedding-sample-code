@@ -1,6 +1,6 @@
 import tensorflow as tf
 from loss import *
-from data import SentencePieceEmbedding, TriLetterEmbedding
+from data import SentencePieceEmbedding, TriLetterEmbedding, XlmEmbedding
 v0 = {
     'version': 'v0',
     'activation': tf.nn.relu,
@@ -243,3 +243,33 @@ v11_1 = {
     'loss': softmax_loss
 }
 #print (v7['sfunc'] == dot)
+
+b0 = {
+    # content: last layer 0.0004
+    # multi lan training
+    'version': 'b0',
+    'lang_tier': 0,
+    'embed_func': XlmEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': True,
+    'con_l2': True,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer,
+    'starter_learning_rate': 0.0001,
+}
+
+b1 = {
+    # content: last layer 0.0004
+    # multi lan training
+    'version': 'b1',
+    'lang_tier': 0,
+    'embed_func': XlmEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': True,
+    'con_l2': True,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer,
+    'starter_learning_rate': 0.0001,
+}

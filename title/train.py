@@ -8,12 +8,13 @@ import collections
 import re
 from datafiles import get_files
 #from loss import self_cosine_loss, w2v_loss, mnlm_loss, order_loss
-from cdssm import cdssm_tower
-from data import SparseDataFeeder
+from cdssm import cdssm_tower, bert
+#from data import SparseDataFeeder
 from content import content_net
 import config
 
-conf = config.w6_9
+conf = config.b1
+init_checkpoint = r'bert\xlm_bert_convert_dis_query_layer3\best_model.ckpt'
 lang_tier = 0 if not 'lang_tier' in conf else conf['lang_tier']
 stepvalue = 500000
 
@@ -23,8 +24,13 @@ def model(features, labels, mode, params):
     embed_dim = params['embed_dim']
     conf = params['config']
 
-    doc = tf.SparseTensor(indices=features['doc_indices'], values=features['doc_values'], dense_shape=(batch_size * doc_max_length, 64))
-    doc_net = cdssm_tower(mode, doc, features['doc_length'], doc_max_length, embed_dim, 'doc', params, conf['activation'])
+    if 'doc_indices' in features:
+        doc = tf.SparseTensor(indices=features['doc_indices'], values=features['doc_values'], dense_shape=(batch_size * doc_max_length, 64))
+        doc_net = cdssm_tower(mode, doc, features['doc_length'], doc_max_length, embed_dim, 'doc', params, conf['activation'])
+    else:
+        bert_config = r'bert\xlm_bert_convert_dis_query_layer3\xlm_config_dis.json'
+        doc_net = bert(bert_config, mode, params['hidden_units'][-1], features['doc_ids'], features['doc_mask'], features['doc_type'], conf['activation'],
+            init_checkpoint)
     con_net = content_net(features['content'], doc_net.shape[-1], mode, conf['activation'])
     tf.summary.histogram('doc_net', doc_net)
     tf.summary.histogram('con_net', con_net)
@@ -103,14 +109,15 @@ def main(argv):
     #test_files = ['train_random_title_0421_en.txt']
     test_files = [['train_HRS_title_April.txt']]
     embed_func = conf['embed_func']
-    train_feeder = SparseDataFeeder(
+    data_feeder = embed_func.get_feeder()
+    train_feeder = data_feeder(
         params['batch_size'],
         train_files,
         params['doc_max_length'],
         skip_count=0,
         embed_func=embed_func,
         training = True)
-    test_feeder = SparseDataFeeder(
+    test_feeder = data_feeder(
         params['batch_size'],
         test_files,
         params['doc_max_length'],
