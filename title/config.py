@@ -262,8 +262,69 @@ b0 = {
 b1 = {
     # content: last layer 0.0004
     # multi lan training
+    # init from xml params
     'version': 'b1',
     'lang_tier': 0,
+    'embed_func': XlmEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': True,
+    'con_l2': True,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer,
+    'starter_learning_rate': 0.0001,
+}
+
+b1_1 = {
+    # content: last layer 0.0004
+    # multi lan training
+    'version': 'b1_multi',
+    'lang_tier': 1,
+    'embed_func': XlmEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': True,
+    'con_l2': True,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer,
+    'starter_learning_rate': 0.0001,
+}
+
+b1_2 = {
+    # content: last layer 0.0004
+    # multi lan training
+    # merge chs & chz
+    'version': 'b1_multi_more',
+    'lang_tier': 1,
+    'embed_func': XlmEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': True,
+    'con_l2': True,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer,
+    'starter_learning_rate': 0.0001,
+}
+b1_3 = {
+    # content: last layer 0.0004
+    # multi lan training
+    # merge chs & chz
+    'version': 'b1_multi_2test',
+    'lang_tier': 1,
+    'embed_func': XlmEmbedding,
+    'activation': tf.nn.softplus,
+    'query_l2': True,
+    'con_l2': True,
+    'sfunc': dot, # order_Sfunc
+    'loss': softmax_loss,
+    'optimizer': tf.train.AdamOptimizer,
+    'starter_learning_rate': 0.0001,
+}
+
+r1 = {
+    # regression
+    'version': 'r1',
+    'lang_tier': 1,
     'embed_func': XlmEmbedding,
     'activation': tf.nn.softplus,
     'query_l2': True,
