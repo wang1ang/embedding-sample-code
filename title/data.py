@@ -164,19 +164,31 @@ class DataFeeder(object):
                         data = {
                             'url': url,
                             'doc': func_embedding(doc),
-                            'content': content
+                            'content': content,
+                            'rating': .0
                         }
+                        if len(tokens) > 3:
+                            data['rating'] = float(tokens[3])
                         yield data
     def make_batch(self):
         pass
     def poll_batch(self):
         batch_fetcher = [self.get_batch(it) for it in self.line_iter]
-        while True:
-            for fetcher in batch_fetcher:
-                yield next(fetcher)
+        if self.training:
+            while True:
+                for fetcher in batch_fetcher:
+                    yield next(fetcher)
+        else:
+            while True:
+                multiple_test = {'url': [], 'doc_ids': [], 'doc_mask': [], 'doc_type': [], 'content': [], 'rating': []}
+                for fetcher in batch_fetcher:
+                    test = next(fetcher)
+                    for key in multiple_test:
+                        multiple_test[key] += test[key]
+                yield multiple_test
     def get_batch_train(self, dataset):
         while True:
-            urls, docs, contents = [], [], []
+            urls, docs, contents, ratings = [], [], [], []
 
             # fill buffer
             while len(self.buffer) < self.batch_size:
@@ -195,22 +207,26 @@ class DataFeeder(object):
                 urls.append(rec['url'])
                 docs.append(rec['doc'])
                 contents.append(rec['content'])
+                ratings.append(rec['rating'])
             assert len(docs) == self.batch_size
             batch = self.make_batch(docs)
             batch['content'] = contents
             batch['url'] = urls
+            batch['rating'] = ratings
             yield batch
     def get_batch_test(self, dataset):
         while True:
-            urls, docs, contents = [], [], []
+            urls, docs, contents, ratings = [], [], [], []
             for i in range(self.batch_size):
                 rec = next(dataset)
                 urls.append(rec['url'])
                 docs.append(rec['doc'])
                 contents.append(rec['content'])
+                ratings.append(rec['rating'])
             batch = self.make_batch(docs)
             batch['content'] = contents
             batch['url'] = urls
+            batch['rating'] = ratings
             yield batch
 
 class DenseDataFeeder(DataFeeder):
@@ -247,13 +263,15 @@ class DenseDataFeeder(DataFeeder):
                 'doc_ids': tf.int32,
                 'doc_mask': tf.int32,
                 'doc_type': tf.int32,
-                'content': tf.float32
+                'content': tf.float32,
+                'rating': tf.float32
             }, {
                 'url': tf.TensorShape([None]),
                 'doc_ids': tf.TensorShape([None, self.doc_max_length]),
                 'doc_mask': tf.TensorShape([None, self.doc_max_length]),
                 'doc_type': tf.TensorShape([None, self.doc_max_length]),
-                'content': tf.TensorShape([None, 2048])
+                'content': tf.TensorShape([None, 2048]),
+                'rating': tf.TensorShape([None])
             })
             iterator = dataset.make_one_shot_iterator()
             return iterator.get_next()
@@ -329,14 +347,14 @@ if __name__ == '__main__':
     #print (batch)
     print (train_feeder.get_vocab_size())
     """
-    files = get_files(0)
+    files = get_files(1)
     train_feeder = DenseDataFeeder(
         16,
         files,
         12,
         skip_count = 0,
         embed_func=XlmEmbedding,
-        training = True
+        training = False
     )
     batch_iter = train_feeder.poll_batch()
     batch = next(batch_iter)

@@ -41,7 +41,7 @@ def _softmax_loss(smatrix, size):
         return loss, similarity, accuracy
 
 def softmax_loss(mode, hparams, similarities, version):
-    with tf.variable_scope('self_cosine_loss'):
+    with tf.variable_scope('self_cosine_loss', reuse=tf.AUTO_REUSE):
         batchsize = hparams['batch_size']
         conf = hparams['config']
         if conf['query_l2'] or conf['con_l2'] or conf['sfunc'] == relative_Sfunc:
@@ -54,7 +54,14 @@ def softmax_loss(mode, hparams, similarities, version):
         loss, similarity, accuracy = _softmax_loss(similarities, batchsize)
         return loss, similarity, accuracy, 'my_loss'
 
-
+def regression_loss(mode, hparams, similarities, ratings, version):
+    # similarities should be 1-d
+    with tf.variable_scope('regression_loss'):
+        W = tf.get_variable('weight_1', [1], initializer=tf.constant_initializer(5.0))
+        b = tf.get_variable('b_1', [1], initializer=tf.constant_initializer(0.01))
+        similarities = similarities * W + b
+        loss = tf.losses.absolute_difference(similarities, ratings)
+        return loss, 'mae_loss'
 def w2v_loss(mode, hparams, similarities, version):
     # this loss is used in word2vec
     # it doesn't explicitly represent the accuracy

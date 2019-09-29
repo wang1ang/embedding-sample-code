@@ -13,7 +13,7 @@ from cdssm import cdssm_tower, bert
 from content import content_net
 import config
 
-conf = config.b1
+conf = config.b1_3
 init_checkpoint = r'bert\xlm_bert_convert_dis_query_layer3\best_model.ckpt'
 lang_tier = 0 if not 'lang_tier' in conf else conf['lang_tier']
 stepvalue = 500000
@@ -30,7 +30,7 @@ def model(features, labels, mode, params):
     else:
         bert_config = r'bert\xlm_bert_convert_dis_query_layer3\xlm_config_dis.json'
         doc_net = bert(bert_config, mode, params['hidden_units'][-1], features['doc_ids'], features['doc_mask'], features['doc_type'], conf['activation'],
-            init_checkpoint)
+            params['init_checkpoint'])
     con_net = content_net(features['content'], doc_net.shape[-1], mode, conf['activation'])
     tf.summary.histogram('doc_net', doc_net)
     tf.summary.histogram('con_net', con_net)
@@ -41,6 +41,14 @@ def model(features, labels, mode, params):
     if conf['con_l2']:
         con_net = tf.nn.l2_normalize(con_net, axis=1, epsilon=1e-3, name='l2_normalize_content')
 
+    if mode == tf.estimator.ModeKeys.EVAL:
+        # split multiple (2) tests:
+        doc_tests = tf.split(doc_net, 2, 0)
+        con_tests = tf.split(con_net, 2, 0)
+        doc_net = doc_tests[0]
+        con_net = con_tests[0]
+        doc_tests = doc_tests[1:]
+        con_tests = con_tests[1:]
     # similarity matrix
     similarities = conf['sfunc'](doc_net, con_net)
         
@@ -61,12 +69,17 @@ def model(features, labels, mode, params):
 
     if mode == tf.estimator.ModeKeys.EVAL:
         metrics = {loss_name: tf.metrics.mean(loss), 'accuracy': tf.metrics.mean(accuracy)}
+        for i, (doc_net_, con_net_) in enumerate(zip(doc_tests, con_tests)):
+            similarities_ = conf['sfunc'](doc_net_, con_net_)
+            loss_, similarity_, accuracy_, loss_name_ = conf['loss'](mode, params, similarities_, conf['version'])
+            metrics['accuracy_gdi{}'.format(i)] = tf.metrics.mean(accuracy_)
         return tf.estimator.EstimatorSpec(mode, loss=total_loss, eval_metric_ops=metrics)
-
+    """
     if params['init_checkpoint']:
         tvars = tf.trainable_variables()
         (assignment_map, initialized_variable_names) = get_assignment_map_from_checkpoint(tvars, params['init_checkpoint'])
         tf.train.init_from_checkpoint( params['init_checkpoint'], assignment_map)
+    """
     # Create training op.
     assert mode == tf.estimator.ModeKeys.TRAIN
     with tf.variable_scope('train_op'):
@@ -101,13 +114,14 @@ def main(argv):
         'config': conf,
         'model_dir': 'models/' + conf['version'] +'/' # + '_0.02/'
     }
-
+    if not os.path.isdir(params['model_dir']):
+        params['init_checkpoint'] = init_checkpoint
     # train
     #train_files = [['train_random_title_04{}_multi.txt'.format(n) for n in [13,15,16,17,18,19,20,21]]]
     train_files = get_files(lang_tier)
     #train_files = train_files[0:1]
     #test_files = ['train_random_title_0421_en.txt']
-    test_files = [['train_HRS_title_April.txt']]
+    test_files = [['train_HRS_title_April.txt'], ['train_HRS_title_gdi.txt']]
     embed_func = conf['embed_func']
     data_feeder = embed_func.get_feeder()
     train_feeder = data_feeder(
